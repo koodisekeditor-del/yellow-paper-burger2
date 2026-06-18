@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Yellow Paper Burger — Eagle Rock, LA</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+<style>
+
+  /* ====== TOKENS ====== */
+  :root{
+    --yellow: #FFD200;
+    --yellow-dark: #E8BE00;
+    --ink: #141414;
+    --ink-soft: #242220;
+    --paper: #FBF1D8;
+    --paper-line: rgba(20,18,15,0.18);
+    --chili: #D8412A;
+    --white: #FFFDF7;
+
+    --font-display: 'Archivo Black', 'Arial Black', sans-serif;
+    --font-body: 'Inter', -apple-system, sans-serif;
+    --font-mono: 'JetBrains Mono', 'Courier New', monospace;
+
+    --container: 1140px;
+  }
+
+  *{ margin:0; padding:0; box-sizing:border-box; }
+  html{ scroll-behavior:smooth; }
+  body{
+    background: var(--ink);
+    color: var(--ink);
+    font-family: var(--font-body);
+    line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+    overflow-x:hidden;
+  }
+  img{ max-width:100%; display:block; }
+  a{ color:inherit; text-decoration:none; }
+  button{ font-family:inherit; cursor:pointer; border:none; background:none; }
+  ul{ list-style:none; }
+  .wrap{ max-width:var(--container); margin:0 auto; padding:0 24px; }
+
+  /* faint paper-grain texture, used over dark + light sections alike */
+  .grain{ position:relative; }
+  .grain::before{
+    content:"";
+    position:absolute; inset:0;
+    pointer-events:none;
+    opacity:.5;
+    mix-blend-mode:overlay;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.35'/%3E%3C/svg%3E");
+  }
+
+  /* torn-paper zigzag strip — sits at the top of a section, color = that section's bg,
+     pulled up to "tear" into the section above it */
+  .torn{
+    width:100%;
+    height:26px;
+    margin-top:-1px;
+    background-size: 26px 30px;
+    background-position: 0 0;
+  }
+  .torn--paper{ background-image: linear-gradient(135deg, var(--paper) 50%, transparent 50%), linear-gradient(225deg, var(--paper) 50%, transparent 50%); }
+  .torn--ink{ background-image: linear-gradient(135deg, var(--ink) 50%, transparent 50%), linear-gradient(225deg, var(--ink) 50%, transparent 50%); }
+  .torn--white{ background-image: linear-gradient(135deg, var(--white) 50%, transparent 50%), linear-gradient(225deg, var(--white) 50%, transparent 50%); }
+
+  .eyebrow{
+    font-family: var(--font-mono);
+    font-weight:700;
+    font-size:.78rem;
+    letter-spacing:.14em;
+    text-transform:uppercase;
+    display:inline-flex;
+    align-items:center;
+    gap:.5em;
+  }
+  .eyebrow::before{
+    content:"";
+    width:8px; height:8px;
+    background:var(--chili);
+    border-radius:1px;
+    transform:rotate(45deg);
+    flex-shrink:0;
+  }
+
+  .btn{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    gap:.5em;
+    font-family:var(--font-display);
+    font-size:.95rem;
+    letter-spacing:.03em;
+    padding:18px 30px;
+    border-radius:2px;
+    transition: transform .18s ease, background .18s ease, color .18s ease, box-shadow .18s ease;
+  }
+  .btn--solid{
+    background:var(--yellow);
+    color:var(--ink);
+    box-shadow: 4px 4px 0 rgba(0,0,0,.9);
+  }
+  .btn--solid:hover{
+    transform: translate(-2px,-2px);
+    box-shadow: 6px 6px 0 rgba(0,0,0,.9);
+    background:var(--yellow-dark);
+  }
+  .btn--outline{
+    background:transparent;
+    color:var(--white);
+    border:2px solid var(--white);
+  }
+  .btn--outline:hover{
+    background:var(--white);
+    color:var(--ink);
+  }
+  .btn--dark{
+    background:var(--ink);
+    color:var(--yellow);
+    box-shadow: 4px 4px 0 var(--chili);
+  }
+  .btn--dark:hover{
+    transform: translate(-2px,-2px);
+    box-shadow: 6px 6px 0 var(--chili);
+  }
+
+  /* ====== NAV ====== */
+  header{
+    position:sticky; top:0; z-index:50;
+    background:var(--ink);
+    border-bottom:2px solid var(--yellow);
+  }
+  nav{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:16px 24px;
+    max-width:var(--container); margin:0 auto;
+  }
+  .logo{
+    font-family:var(--font-display);
+    color:var(--yellow);
+    font-size:1.15rem;
+    letter-spacing:.02em;
+    line-height:1;
+  }
+  .logo span{ color:var(--white); }
+  .nav-links{
+    display:none;
+    gap:28px;
+    font-family:var(--font-mono);
+    font-size:.8rem;
+    letter-spacing:.08em;
+    text-transform:uppercase;
+    color:var(--white);
+  }
+  .nav-links a{ position:relative; padding-bottom:4px; }
+  .nav-links a::after{
+    content:"";
+    position:absolute; left:0; bottom:0;
+    width:0; height:2px; background:var(--yellow);
+    transition:width .2s ease;
+  }
+  .nav-links a:hover::after{ width:100%; }
+  .nav-order{
+    font-family:var(--font-mono);
+    font-size:.75rem;
+    font-weight:700;
+    letter-spacing:.08em;
+    text-transform:uppercase;
+    background:var(--yellow);
+    color:var(--ink);
+    padding:10px 16px;
+    border-radius:2px;
+    white-space:nowrap;
+  }
+  @media(min-width:780px){
+    .nav-links{ display:flex; }
+  }
+
+  /* ====== HERO ====== */
+  .hero{
+    background:var(--ink);
+    color:var(--white);
+    padding:70px 0 56px;
+    position:relative;
+  }
+  .hero .wrap{ position:relative; z-index:1; }
+  .hero-eyebrow{ color:var(--yellow); margin-bottom:22px; display:block; }
+  .hero h1{
+    font-family:var(--font-display);
+    color:var(--yellow);
+    font-size:clamp(2.6rem, 11vw, 6.4rem);
+    line-height:0.96;
+    letter-spacing:-.01em;
+    text-shadow: 4px 4px 0 var(--chili);
+  }
+  .hero-sub{
+    margin-top:26px;
+    font-size:clamp(1.05rem, 2.4vw, 1.4rem);
+    color:var(--white);
+    max-width:34ch;
+    font-weight:500;
+  }
+  .hero-ctas{
+    margin-top:38px;
+    display:flex;
+    flex-wrap:wrap;
+    gap:16px;
+  }
+  .hero-stamp{
+    margin-top:54px;
+    display:inline-block;
+    font-family:var(--font-mono);
+    font-size:.72rem;
+    letter-spacing:.1em;
+    text-transform:uppercase;
+    color:var(--ink);
+    background:var(--white);
+    padding:10px 16px;
+    transform:rotate(-3deg);
+    border:2px dashed var(--ink);
+  }
+
+  /* ====== SECTION SHELLS ====== */
+  section{ position:relative; scroll-margin-top: 84px; }
+  .section-pad{ padding:64px 0 76px; }
+  .paper-bg{ background:var(--paper); color:var(--ink); }
+  .ink-bg{ background:var(--ink); color:var(--white); }
+  .white-bg{ background:var(--white); color:var(--ink); }
+
+  h2.section-title{
+    font-family:var(--font-display);
+    font-size:clamp(1.9rem, 6vw, 3.1rem);
+    line-height:1.04;
+    margin-top:14px;
+  }
+  .section-lead{
+    margin-top:16px;
+    max-width:48ch;
+    font-size:1.05rem;
+    color:inherit;
+    opacity:.85;
+  }
+
+  /* ====== MAP / LOCATION ====== */
+  .location-grid{
+    margin-top:40px;
+    display:grid;
+    gap:24px;
+    grid-template-columns:1fr;
+  }
+  @media(min-width:840px){
+    .location-grid{ grid-template-columns: 1fr 1.3fr; align-items:stretch; }
+  }
+  .location-card{
+    background:var(--ink);
+    color:var(--white);
+    padding:28px;
+    border-radius:3px;
+    position:relative;
+  }
+  .location-card .tag{
+    font-family:var(--font-mono);
+    font-size:.7rem;
+    letter-spacing:.1em;
+    text-transform:uppercase;
+    background:var(--yellow);
+    color:var(--ink);
+    display:inline-block;
+    padding:6px 10px;
+    transform:rotate(-2deg);
+  }
+  .location-card .addr{
+    font-family:var(--font-display);
+    font-size:1.45rem;
+    margin-top:18px;
+    line-height:1.18;
+    color:var(--yellow);
+  }
+  .location-card .hours{
+    margin-top:18px;
+    font-family:var(--font-mono);
+    font-size:.92rem;
+    color:var(--white);
+    border-top:1px dashed rgba(255,255,255,.3);
+    padding-top:14px;
+  }
+  .location-card .hours b{ color:var(--yellow); }
+  .location-card .note{
+    margin-top:14px;
+    font-size:.88rem;
+    opacity:.75;
+  }
+  .map-frame{
+    border-radius:3px;
+    overflow:hidden;
+    border:2px solid var(--ink);
+    height:320px;
+    isolation:isolate;
+    position:relative;
+  }
+  #ypb-map{ width:100%; height:100%; background:var(--paper); }
+  .map-frame .leaflet-popup-content{ font-family:var(--font-body); font-size:.85rem; }
+  .map-frame .leaflet-popup-content b{ font-family:var(--font-display); }
+
+  /* ====== RESERVATION ====== */
+  .reserve-grid{
+    margin-top:40px;
+    display:grid;
+    gap:24px;
+  }
+  @media(min-width:780px){
+    .reserve-grid{ grid-template-columns: 0.9fr 1.1fr; align-items:start; }
+  }
+  .reserve-note{
+    font-size:1.02rem;
+    opacity:.85;
+    max-width:34ch;
+  }
+  .reserve-note .tag{
+    font-family:var(--font-mono);
+    font-size:.7rem;
+    letter-spacing:.1em;
+    text-transform:uppercase;
+    background:var(--chili);
+    color:var(--white);
+    display:inline-block;
+    padding:6px 10px;
+    transform:rotate(-2deg);
+    margin-bottom:18px;
+  }
+  .reserve-card{
+    background:var(--white);
+    color:var(--ink);
+    border-radius:2px;
+    box-shadow: 8px 8px 0 var(--yellow);
+    padding:28px;
+  }
+  .field{
+    margin-bottom:18px;
+  }
+  .field label{
+    display:block;
+    font-family:var(--font-mono);
+    font-size:.72rem;
+    letter-spacing:.1em;
+    text-transform:uppercase;
+    margin-bottom:8px;
+    color:var(--ink-soft);
+  }
+  .field input, .field select{
+    width:100%;
+    font-family:var(--font-body);
+    font-size:1rem;
+    padding:13px 14px;
+    border:2px solid var(--ink);
+    border-radius:2px;
+    background:var(--white);
+    color:var(--ink);
+  }
+  .field input:focus, .field select:focus{
+    outline:3px solid var(--yellow);
+    outline-offset:1px;
+  }
+  .field-row{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:14px;
+  }
+  .form-error{
+    display:none;
+    background:var(--chili);
+    color:var(--white);
+    font-family:var(--font-mono);
+    font-size:.85rem;
+    padding:12px 14px;
+    border-radius:2px;
+    margin-bottom:18px;
+  }
+  .form-error.show{ display:block; }
+  .reserve-card .btn{ width:100%; margin-top:6px; }
+  .reserve-fineprint{
+    margin-top:16px;
+    font-family:var(--font-mono);
+    font-size:.74rem;
+    opacity:.6;
+    font-style:italic;
+  }
+
+  .confirm-ticket{ display:none; }
+  .confirm-ticket.show{ display:block; }
+  .confirm-ticket .stub-head{
+    display:flex; justify-content:space-between; align-items:baseline;
+    font-family:var(--font-mono); font-size:.72rem; letter-spacing:.1em; text-transform:uppercase;
+    border-bottom:2px dashed var(--paper-line);
+    padding-bottom:14px; margin-bottom:18px;
+    color:var(--ink-soft);
+  }
+  .confirm-ticket h3{
+    font-family:var(--font-display);
+    color:var(--chili);
+    font-size:1.4rem;
+    margin-bottom:16px;
+  }
+  .confirm-ticket dl{
+    display:grid;
+    grid-template-columns:auto 1fr;
+    gap:10px 16px;
+    font-family:var(--font-mono);
+    font-size:.92rem;
+  }
+  .confirm-ticket dt{ opacity:.6; text-transform:uppercase; font-size:.74rem; align-self:center; }
+  .confirm-ticket dd{ font-weight:700; }
+  .confirm-ticket .btn{ margin-top:22px; }
+
+  /* ====== MENU (order-ticket style) ====== */
+  .call-banner{
+    margin-top:34px;
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    gap:18px;
+    background:var(--ink);
+    color:var(--white);
+    padding:20px 24px;
+    border-radius:2px;
+  }
+  .call-banner p{
+    font-family:var(--font-mono);
+    font-size:.85rem;
+    opacity:.85;
+    flex:1 1 220px;
+  }
+  .call-banner .btn{ flex-shrink:0; }
+
+  .menu-ticket{
+    margin-top:28px;
+    background:var(--white);
+    border:2px solid var(--ink);
+    border-radius:2px;
+    box-shadow: 8px 8px 0 var(--ink);
+  }
+  .ticket-head{
+    display:flex; justify-content:space-between; align-items:baseline;
+    padding:22px 26px 16px;
+    border-bottom:2px dashed var(--paper-line);
+    font-family:var(--font-mono);
+    font-size:.75rem;
+    letter-spacing:.1em;
+    text-transform:uppercase;
+  }
+  .menu-category{
+    font-family:var(--font-mono);
+    font-weight:700;
+    font-size:.78rem;
+    letter-spacing:.14em;
+    text-transform:uppercase;
+    color:var(--chili);
+    background:var(--paper);
+    padding:10px 26px;
+    border-bottom:2px dashed var(--paper-line);
+  }
+  .menu-item{
+    display:grid;
+    grid-template-columns: 1fr auto;
+    gap:4px 18px;
+    padding:18px 26px;
+    border-bottom:2px dashed var(--paper-line);
+    align-items:start;
+  }
+  .menu-item:last-of-type{ border-bottom:none; }
+  .menu-item h3{
+    font-family:var(--font-display);
+    font-size:1.1rem;
+    letter-spacing:.01em;
+  }
+  .menu-item p{
+    grid-column:1 / -1;
+    margin-top:6px;
+    font-size:.92rem;
+    color:var(--ink-soft);
+    max-width:46ch;
+    opacity:.85;
+  }
+  .menu-item .price{
+    font-family:var(--font-mono);
+    font-weight:700;
+    font-size:1.05rem;
+    color:var(--chili);
+    white-space:nowrap;
+  }
+  .ticket-foot{
+    padding:18px 26px 24px;
+    font-family:var(--font-mono);
+    font-size:.82rem;
+    color:var(--ink-soft);
+  }
+  .ticket-foot .btn{ margin-top:14px; }
+
+  /* ====== SOCIAL ====== */
+  .social{
+    text-align:center;
+    padding:78px 0 90px;
+  }
+  .social h2{
+    font-family:var(--font-display);
+    color:var(--yellow);
+    font-size:clamp(2rem, 8vw, 3.8rem);
+    margin-top:14px;
+  }
+  .social p{
+    max-width:42ch;
+    margin:18px auto 36px;
+    color:var(--white);
+    opacity:.85;
+    font-size:1.05rem;
+  }
+  .social .eyebrow{ color:var(--chili); }
+
+  /* ====== FOOTER ====== */
+  footer{
+    background:var(--ink);
+    color:var(--white);
+    border-top:2px solid var(--yellow);
+    padding:32px 0;
+    font-family:var(--font-mono);
+    font-size:.78rem;
+    opacity:.7;
+  }
+  footer .wrap{
+    display:flex; flex-direction:column; gap:8px;
+  }
+  @media(min-width:700px){
+    footer .wrap{ flex-direction:row; justify-content:space-between; align-items:center; }
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    *{ transition:none !important; scroll-behavior:auto !important; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <nav>
+    <div class="logo">YELLOW<span>PAPER</span></div>
+    <ul class="nav-links">
+      <li><a href="#location">Today's Spot</a></li>
+      <li><a href="#reserve">Reserve</a></li>
+      <li><a href="#menu">Menu</a></li>
+      <li><a href="#social">Instagram</a></li>
+    </ul>
+    <a href="tel:+14204882874" class="nav-order">Order</a>
+  </nav>
+</header>
+
+<section class="hero grain">
+  <div class="wrap">
+    <span class="eyebrow hero-eyebrow">Eagle Rock, CA · Est. 2019</span>
+    <h1>YELLOW PAPER<br>BURGER.</h1>
+    <p class="hero-sub">The crispiest smash edges in LA. Wrapped in paper, eaten with your hands.</p>
+    <div class="hero-ctas">
+      <a href="tel:+14204882874" class="btn btn--solid">Order Now</a>
+      <a href="#location" class="btn btn--outline">Today's Location</a>
+    </div>
+    <span class="hero-stamp">Worth the wait</span>
+  </div>
+</section>
+
+<div class="torn torn--paper"></div>
+
+<section id="location" class="paper-bg section-pad">
+  <div class="wrap">
+    <span class="eyebrow">From Pop-Up To Permanent</span>
+    <h2 class="section-title">WHERE ARE WE TODAY?</h2>
+    <p class="section-lead">Five years of weekend pop-ups later, the answer is finally the same every day: a real counter, a real patio, and the same yellow paper.</p>
+
+    <div class="location-grid">
+      <div class="location-card">
+        <span class="tag">Today's Spot</span>
+        <div class="addr">1740 Colorado Blvd<br>Eagle Rock, LA 90041</div>
+        <div class="hours"><b>Wed – Sun</b> · 12:00PM – 8:30PM<br><b>Mon – Tue</b> · Closed</div>
+        <p class="note">Look for the red "Worth The Wait" sign on the door — and the line that proves it.</p>
+      </div>
+      <div class="map-frame">
+        <div id="ypb-map" role="img" aria-label="Mini map showing Yellow Paper Burger at 1740 Colorado Blvd, Eagle Rock"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="torn torn--ink"></div>
+
+<section id="reserve" class="ink-bg section-pad">
+  <div class="wrap">
+    <span class="eyebrow" style="color:var(--yellow)">Save A Spot</span>
+    <h2 class="section-title" style="color:var(--white)">RESERVE A TABLE.</h2>
+    <p class="section-lead" style="color:var(--white)">Patio seating goes fast on weekends. Drop your details below and we'll have a spot ready.</p>
+
+    <div class="reserve-grid">
+      <div class="reserve-note">
+        <span class="tag">Heads up</span>
+        <p>We're closed Mondays &amp; Tuesdays, and the kitchen stops taking orders shortly before 8:30PM close. Bringing a crew of 9 or more? Email us about catering instead.</p>
+      </div>
+
+      <div class="reserve-card">
+
+        <form id="reserve-form">
+          <div class="form-error" id="reserve-error"></div>
+
+          <div class="field">
+            <label for="r-name">Name</label>
+            <input type="text" id="r-name" name="name" required placeholder="Who's the reservation for?">
+          </div>
+
+          <div class="field-row">
+            <div class="field">
+              <label for="r-date">Date</label>
+              <input type="date" id="r-date" name="date" required>
+            </div>
+            <div class="field">
+              <label for="r-time">Time</label>
+              <select id="r-time" name="time" required>
+                <option value="" disabled selected>Pick a time</option>
+                <option>12:00 PM</option><option>12:30 PM</option>
+                <option>1:00 PM</option><option>1:30 PM</option>
+                <option>2:00 PM</option><option>2:30 PM</option>
+                <option>3:00 PM</option><option>3:30 PM</option>
+                <option>4:00 PM</option><option>4:30 PM</option>
+                <option>5:00 PM</option><option>5:30 PM</option>
+                <option>6:00 PM</option><option>6:30 PM</option>
+                <option>7:00 PM</option><option>7:30 PM</option>
+                <option>8:00 PM</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="r-guests">Guests</label>
+            <select id="r-guests" name="guests" required>
+              <option value="" disabled selected>How many?</option>
+              <option>1</option><option>2</option><option>3</option><option>4</option>
+              <option>5</option><option>6</option><option>7</option><option>8</option>
+              <option>9+ (email us for groups)</option>
+            </select>
+          </div>
+
+          <button type="submit" class="btn btn--solid">Reserve Table</button>
+          <p class="reserve-fineprint">Demo form — this doesn't actually book anything yet. For a real table right now, call ahead or walk in.</p>
+        </form>
+
+        <div class="confirm-ticket" id="confirm-ticket">
+          <div class="stub-head"><span>Reservation Stub</span><span id="confirm-num">No. 000</span></div>
+          <h3>You're on the list.</h3>
+          <dl>
+            <dt>Name</dt><dd id="confirm-name"></dd>
+            <dt>Date</dt><dd id="confirm-date"></dd>
+            <dt>Time</dt><dd id="confirm-time"></dd>
+            <dt>Guests</dt><dd id="confirm-guests"></dd>
+          </dl>
+          <button type="button" class="btn btn--dark" id="reserve-again">Make Another Reservation</button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="torn torn--white"></div>
+
+<section id="menu" class="white-bg section-pad">
+  <div class="wrap">
+    <span class="eyebrow">The Menu</span>
+    <h2 class="section-title">PAPER OR IT DIDN'T HAPPEN.</h2>
+    <p class="section-lead">Short on online ordering, long on flavor. Browse the full menu below, then call the counter directly to place your order.</p>
+
+    <div class="call-banner">
+      <p>No online ordering right now — call ahead and we'll have it ready.</p>
+      <a href="tel:+14204882874" class="btn btn--solid">Call (420) 488-2874</a>
+    </div>
+
+    <div class="menu-ticket">
+      <div class="ticket-head">
+        <span>Order Ticket</span>
+        <span>No. 001</span>
+      </div>
+
+      <div class="menu-category">Burgers</div>
+
+      <div class="menu-item">
+        <h3>Single</h3>
+        <span class="price">$9</span>
+        <p>3 oz. patty seasoned with salt and pepper, cheese, butter-toasted bun, mayo, chopped chilies, onion, pickles, tomato, lettuce.</p>
+      </div>
+      <div class="menu-item">
+        <h3>Double</h3>
+        <span class="price">$14</span>
+        <p>Two 3 oz. patties, two slices of cheese, butter-toasted bun, mayo, chopped chilies, onion, pickles, tomato, shredded lettuce.</p>
+      </div>
+      <div class="menu-item">
+        <h3>Triple</h3>
+        <span class="price">$16</span>
+        <p>Same build, three patties and three slices of cheese. For the truly hungry.</p>
+      </div>
+      <div class="menu-item">
+        <h3>Quad</h3>
+        <span class="price">$18</span>
+        <p>Four patties, four slices of cheese. The full stack.</p>
+      </div>
+      <div class="menu-item">
+        <h3>Grilled Cheese</h3>
+        <span class="price">$5</span>
+        <p>Burger bun, two slices of cheese, chopped chilies, onion, pickles, tomato, shredded lettuce. No patty.</p>
+      </div>
+      <div class="menu-item">
+        <h3>Kids Single</h3>
+        <span class="price">$5</span>
+        <p>One plain 3 oz. patty, cheese, butter-toasted bun.</p>
+      </div>
+      <div class="menu-item">
+        <h3>Kids Double</h3>
+        <span class="price">$8</span>
+        <p>Two plain 3 oz. patties, two slices of cheese, butter-toasted bun.</p>
+      </div>
+      <div class="menu-item">
+        <h3>Pup Patty</h3>
+        <span class="price">$3</span>
+        <p>One unseasoned 3 oz. patty, just for the dog on the patio.</p>
+      </div>
+
+      <div class="menu-category">Hot Dogs</div>
+      <div class="menu-item">
+        <h3>Hot Dog</h3>
+        <span class="price">$8</span>
+        <p>All-beef dog on a butter-toasted bun, mayo, diced onion, diced pickles, chopped chilies, mustard.</p>
+      </div>
+
+      <div class="menu-category">Sides</div>
+      <div class="menu-item">
+        <h3>Tots</h3>
+        <span class="price">$6</span>
+        <p>Fried crispy, tossed in Old Bay.</p>
+      </div>
+      <div class="menu-item">
+        <h3>Ronch</h3>
+        <span class="price">$1</span>
+        <p>House dip — Greek yogurt, mayo, lemon, garlic, chives, dill, chili brine. Somewhere between ranch and tartar.</p>
+      </div>
+      <div class="menu-item">
+        <h3>Pickled Egg</h3>
+        <span class="price">$5</span>
+        <p>Hard-boiled egg pickled in chili brine, served with chips and whole chilies.</p>
+      </div>
+      <div class="menu-item">
+        <h3>Chips</h3>
+        <span class="price">$1</span>
+      </div>
+
+      <div class="menu-category">Dessert</div>
+      <div class="menu-item">
+        <h3>Apple Hand Pie</h3>
+        <span class="price">$9</span>
+        <p>All-butter crust, apples, cinnamon, nutmeg, cardamom — baked in-house. Subject to availability.</p>
+      </div>
+      <div class="menu-item">
+        <h3>Blueberry Galette</h3>
+        <span class="price">$9</span>
+      </div>
+      <div class="menu-item">
+        <h3>Pop Tart</h3>
+        <span class="price">$8</span>
+        <p>Brown sugar cinnamon or PB&amp;J, all-butter crust. Rotates — ask what's in today.</p>
+      </div>
+
+      <div class="menu-category">Drinks</div>
+      <div class="menu-item">
+        <h3>Mexican Coke</h3>
+        <span class="price">$4</span>
+      </div>
+      <div class="menu-item">
+        <h3>Diet Coke</h3>
+        <span class="price">$3</span>
+      </div>
+      <div class="menu-item">
+        <h3>Mineragua</h3>
+        <span class="price">$4</span>
+      </div>
+      <div class="menu-item">
+        <h3>Apple Juice</h3>
+        <span class="price">$3</span>
+      </div>
+
+      <div class="ticket-foot">
+        Prices and availability change — items can sell out by close. Call ahead to confirm before you make the trip.
+        <br>
+        <a href="tel:+14204882874" class="btn btn--dark">Call To Order</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="torn torn--ink"></div>
+
+<section id="social" class="ink-bg grain">
+  <div class="wrap social">
+    <span class="eyebrow">Daily Drops</span>
+    <h2>@YELLOWPAPERBURGER</h2>
+    <p>We drop locations, specials and the occasional burger thirst-trap weekly. Follow along so you're never the one showing up to a locked door.</p>
+    <a href="https://www.instagram.com/yellowpaperburger/" target="_blank" rel="noopener" class="btn btn--dark">Follow On Instagram</a>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <span>1740 Colorado Blvd, Eagle Rock, LA 90041 · Wed–Sun 12–8:30PM</span>
+    <span>Concept site built for demo purposes — not an official Yellow Paper Burger property.</span>
+  </div>
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script>
+  // ---- mini map: real OpenStreetMap tiles + marker for 1740 Colorado Blvd, Eagle Rock ----
+  // Note: pin is set from the public street address; nudge the coordinates below
+  // if you have the exact rooftop location before going live.
+  // Init waits for full page load + a forced invalidateSize() so Leaflet measures
+  // the box's *final* size (fonts/CSS settle after first paint) instead of a stale one.
+  window.addEventListener('load', function(){
+    var coords = [34.1409, -118.2071];
+    var map = L.map('ypb-map', { scrollWheelZoom:false }).setView(coords, 16);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors',
+      maxZoom: 19
+    }).addTo(map);
+    var marker = L.marker(coords).addTo(map)
+      .bindPopup('<b>Yellow Paper Burger</b><br>1740 Colorado Blvd, Eagle Rock');
+
+    setTimeout(function(){
+      map.invalidateSize();
+      marker.openPopup();
+    }, 250);
+
+    window.addEventListener('resize', function(){ map.invalidateSize(); });
+  });
+
+  // ---- reservation form: front-end only demo, no real booking is sent ----
+  (function(){
+    var form = document.getElementById('reserve-form');
+    var errorBox = document.getElementById('reserve-error');
+    var dateInput = document.getElementById('r-date');
+    var ticketCount = 0;
+
+    // can't pick a date before today
+    var today = new Date();
+    dateInput.min = today.toISOString().split('T')[0];
+
+    function showError(msg){
+      errorBox.textContent = msg;
+      errorBox.classList.add('show');
+    }
+    function clearError(){
+      errorBox.classList.remove('show');
+      errorBox.textContent = '';
+    }
+
+    form.addEventListener('submit', function(e){
+      e.preventDefault();
+      clearError();
+
+      var name = document.getElementById('r-name').value.trim();
+      var dateVal = dateInput.value;
+      var time = document.getElementById('r-time').value;
+      var guests = document.getElementById('r-guests').value;
+
+      if(!name || !dateVal || !time || !guests){
+        showError('Please fill in every field — we need all four to hold a table.');
+        return;
+      }
+
+      // parse as local date to check the day of week
+      var parts = dateVal.split('-').map(Number);
+      var picked = new Date(parts[0], parts[1]-1, parts[2]);
+      var day = picked.getDay(); // 0 = Sun, 1 = Mon, 2 = Tue...
+      if(day === 1 || day === 2){
+        showError("We're closed Mondays & Tuesdays — pick a day from Wed–Sun instead.");
+        return;
+      }
+
+      var prettyDate = picked.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric', year:'numeric' });
+      ticketCount++;
+
+      document.getElementById('confirm-num').textContent = 'No. ' + String(ticketCount).padStart(3,'0');
+      document.getElementById('confirm-name').textContent = name;
+      document.getElementById('confirm-date').textContent = prettyDate;
+      document.getElementById('confirm-time').textContent = time;
+      document.getElementById('confirm-guests').textContent = guests;
+
+      form.style.display = 'none';
+      document.getElementById('confirm-ticket').classList.add('show');
+    });
+
+    document.getElementById('reserve-again').addEventListener('click', function(){
+      form.reset();
+      clearError();
+      document.getElementById('confirm-ticket').classList.remove('show');
+      form.style.display = 'block';
+    });
+  })();
+</script>
+
+</body>
+</html>
